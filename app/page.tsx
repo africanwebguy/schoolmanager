@@ -1,22 +1,61 @@
 'use client';
 
 import { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [userType, setUserType] = useState<'student' | 'staff' | 'parent'>('staff');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
+    setLoading(true);
+
     const formData = new FormData(e.currentTarget);
-    const credentials = {
-      username: formData.get('username'),
-      password: formData.get('password'),
-      userType,
-      rememberMe,
-    };
-    console.log('Login attempt:', credentials);
+    const username = formData.get('username') as string;
+    const password = formData.get('password') as string;
+
+    try {
+      const supabase = createClient();
+      
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: username,
+        password: password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('user_type')
+          .eq('user_id', data.user.id)
+          .single();
+
+        if (profile && profile.user_type !== userType) {
+          await supabase.auth.signOut();
+          setError('Invalid credentials for the selected user type');
+          setLoading(false);
+          return;
+        }
+
+        router.push('/dashboard');
+        router.refresh();
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+      setLoading(false);
+    }
   };
 
   return (
@@ -97,6 +136,12 @@ export default function LoginPage() {
               </p>
             </div>
 
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
             <div className="flex space-x-2 mb-6">
               <button
                 type="button"
@@ -143,7 +188,8 @@ export default function LoginPage() {
                   id="username"
                   name="username"
                   required
-                  className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  disabled={loading}
+                  className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder={
                     userType === 'student' 
                       ? 'Enter your student ID' 
@@ -164,13 +210,15 @@ export default function LoginPage() {
                     id="password"
                     name="password"
                     required
-                    className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all pr-12"
+                    disabled={loading}
+                    className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all pr-12 disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Enter your password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                    disabled={loading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors disabled:opacity-50"
                   >
                     {showPassword ? (
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +240,8 @@ export default function LoginPage() {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 text-green-600 focus:ring-2 focus:ring-green-500 focus:ring-offset-0 cursor-pointer"
+                    disabled={loading}
+                    className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 text-green-600 focus:ring-2 focus:ring-green-500 focus:ring-offset-0 cursor-pointer disabled:opacity-50"
                   />
                   <span className="ml-2 text-sm text-zinc-600 dark:text-zinc-400">Remember me</span>
                 </label>
@@ -203,9 +252,20 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
               >
-                Sign In
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing In...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
               </button>
             </form>
 
